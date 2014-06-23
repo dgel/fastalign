@@ -34,6 +34,13 @@ struct Params {
 
   Params(double k, double l, double o) : kappa(k), lambda(l), offset(o) {}
   Params() : kappa(0), lambda(0), offset(0) {}
+
+  Params &operator+=(Params const &rhs) {
+    kappa += rhs.kappa;
+    lambda += rhs.lambda;
+    offset += rhs.offset;
+    return *this;
+  }
 };
 
 // assumes that int and size_t are 64 bits. Depends on platform and implementation
@@ -45,12 +52,37 @@ struct TupHash {
 
 typedef std::unordered_map<std::tuple<unsigned short, unsigned short, unsigned short>, unsigned, TupHash> tup_map;
 
+inline tup_map &operator+=(tup_map &lhs, tup_map const &rhs) {
+  for (auto &pair : rhs) {
+    lhs[pair.first] += pair.second;
+  }
+  return lhs;
+}
+
+typedef std::pair<unsigned, unsigned> uintpair;
+inline uintpair &operator+=(uintpair &lhs, uintpair const &rhs) {
+  lhs.first += rhs.first;
+  lhs.second += rhs.second;
+  return lhs;
+}
+
+template <typename T>
+inline std::vector<T> &addToVec(std::vector<T> &lhs, std::vector<T> const &rhs) {
+  if (lhs.size() < rhs.size()) {
+    lhs.resize(rhs.size());
+  }
+  for (size_t i = 0; i < rhs.size(); ++i) {
+    lhs[i] += rhs[i];
+  }
+  return lhs;
+}
+
 // stats collected during E-M, for reporting and optimizing
 struct Stats {
   TTable tcounts;
   std::vector<Params> emp_counts;
   std::vector<Params> mod_counts;
-  std::vector<std::pair<unsigned,unsigned>> toks;
+  std::vector<uintpair> toks;
 
   std::vector<tup_map> size_index_counts;
   double tot_len_ratio = 0;
@@ -65,6 +97,24 @@ struct Stats {
     likelihood = 0;
     lc = 0;
     c0 = 0;
+  }
+
+  void add_count(Stats &other, bool first_iter = false) {
+    tcounts += other.tcounts;
+    other.tcounts.clear();
+    addToVec(emp_counts, other.emp_counts);
+    fill(other.emp_counts.begin(), other.emp_counts.end(), Params{0,0,0});
+    likelihood += other.likelihood;
+    other.likelihood = 0;
+    if (first_iter) {
+      tot_len_ratio += other.tot_len_ratio;
+      other.tot_len_ratio = 0;
+
+      addToVec(toks, other.toks);
+      fill(other.toks.begin(), other.toks.end(), uintpair{0,0});
+      addToVec(size_index_counts, other.size_index_counts);
+      fill(other.size_index_counts.begin(), other.size_index_counts.end(), tup_map{});
+    }
   }
 
   void print(Dict &posdict);

@@ -38,8 +38,7 @@ bool printProgress(size_t lc, bool flag) {
   return flag;
 }
 
-bool print_align(Options const &opts, vector<double> &probs, vector<unsigned> &src, unsigned j,
-                 bool first_al) {
+void print_align(Options const &opts, vector<double> &probs, vector<unsigned> &src, unsigned j, OutputNode *out) {
   double max_p = -1;
   int max_index = -1;
   unsigned i = opts.use_null ? 0 : 1;
@@ -50,16 +49,12 @@ bool print_align(Options const &opts, vector<double> &probs, vector<unsigned> &s
     }
   }
   if (max_index > 0) {
-    if (first_al)
-      first_al = false;
-    else
-      cout << ' ';
+    string &outputbuf = out->out.back();
     if (opts.is_reverse)
-      cout << j << '-' << (max_index - 1);
+       outputbuf += to_string(j) + "-" + to_string(max_index - 1) + " ";
     else
-      cout << (max_index - 1) << '-' << j;
+      outputbuf += to_string(max_index - 1) + "-" + to_string(j) + " ";
   }
-  return first_al;
 }
 
 void print_mat(vector<vector<double>> &probs){
@@ -73,7 +68,9 @@ void print_mat(vector<vector<double>> &probs){
   cerr << endl;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv) 
+try
+{
   ios_base::sync_with_stdio(false);
 
   Options opts;
@@ -90,4 +87,6 @@ int main(int argc, char **argv) {
   } else {
     return run<Absolute>(opts);
   }
+} catch (std::system_error &err) {
+  cerr << "System Error!\n" << err.what() << endl;
 }

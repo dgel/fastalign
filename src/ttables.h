@@ -61,6 +61,10 @@ class TTable {
     ttable[e][f] += x;
   }
 
+  inline void clear() {
+    ttable.clear();
+  }
+
   void UpdateFrom(TTable& other) {
     ttable.swap(other.ttable);
     other.ttable.clear();

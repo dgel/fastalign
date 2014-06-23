@@ -21,6 +21,7 @@
 struct Options {
   std::string input;           // corpus filename
   unsigned ITERATIONS;         // number of iterations
+  unsigned n_threads;          // number of threads
   double alpha;                // parameter for variational bayes
   double prob_align_null;      // null alignment prob
   double prob_align_not_null;  // and complement

@@ -32,6 +32,9 @@ void parseArgs(int argc, char **argv, Options &opts) {
     ValueArg<size_t> oIter("I", "iterations",
                            "number of iterations in EM training (default = 5)",
                            false, 5, "unsigned", cmd);
+    ValueArg<size_t> oThreads("", "parallel",
+                           "number of threads to use (default = 1)",
+                           false, 1, "unsigned", cmd);
     ValueArg<double> oP0("p", "p0", "p_null parameter (default = 0.08)", false,
                          0.08, "double", cmd);
     ValueArg<double> oKappa(
@@ -84,6 +87,7 @@ void parseArgs(int argc, char **argv, Options &opts) {
     opts.input = oInput.getValue();
     opts.pos_filename = oPos.getValue();
     opts.ITERATIONS = oIter.getValue();
+    opts.n_threads = oThreads.getValue();
     opts.prob_align_null = oP0.getValue();
     opts.prob_align_not_null = 1. - opts.prob_align_null;
 
@@ -93,7 +97,7 @@ void parseArgs(int argc, char **argv, Options &opts) {
     opts.conditional_probability_filename = oCond.getValue();
 
     opts.n_no_update_diag = oNUpDiag.getValue();
-    opts.n_no_update_offset = oNUpOffset.getValue();;
+    opts.n_no_update_offset = oNUpOffset.getValue();
 
     opts.is_reverse = sRev.getValue();
     opts.favor_diagonal = sDiag.getValue();
