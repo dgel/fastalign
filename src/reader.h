@@ -42,4 +42,6 @@ public:
   void rewind();
 };
 
+bool print_progress(size_t lc);
+
 #endif

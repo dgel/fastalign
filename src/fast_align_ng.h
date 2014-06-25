@@ -34,11 +34,8 @@
 #include "utils.h"                      // for par_map, n_ranges, etc
 class Dict;
 
-
-bool printProgress(size_t lc, bool flag);
-void print_align(Options const &opts, std::vector<double> &probs, std::vector<unsigned> &src, unsigned j, OutputNode *out);
-void print_mat(std::vector<std::vector<double>> &probs);
-
+unsigned max_align(Options const &opts, std::vector<double> &probs);
+void print_align(Options const &opts, unsigned i, unsigned j, OutputNode *out);
 
 template <typename ModelType>
 double update(double emp, double mod, double orig,
@@ -142,7 +139,6 @@ double processWord(Model &model, Stats &stats, const Options &opts, std::vector<
 
 template <typename ModelType>
 void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const Options &opts, unsigned iter, OutputNode *out) {
-  std::cerr << "counting " << in.size() << " sentences" << std::endl;
   std::vector<double> probs;
 
   bool first_iter = iter == 0;
@@ -189,8 +185,7 @@ void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const O
       double sum =
           processWord<ModelType>(model, stats, opts, probs, src, trg, j, posNum, final_iteration);
       if (final_iteration) {
-        // print alignments
-        print_align(opts, probs, src, j, out);
+        print_align(opts, max_align(opts, probs),  j, out);
       }
       stats.likelihood += log(sum);
     }

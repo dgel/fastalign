@@ -27,15 +27,28 @@ Reader::Reader(std::string &datafile, std::string &posfile, Stats &stats,
   }
 }
 
+bool print_progress(size_t lc) {
+  if (lc % 1000 == 0) {
+    std::cerr << '.';
+  }
+  if (lc % 50000 == 0) {
+    std::cerr << " [" << lc << "]" << std::endl;
+    return false;
+  }
+  return true;
+}
+
 bool Reader::read_n_lines(PairLines &lines, PosLines &poslines, size_t N) {
-  std::cerr.flush();
   lines.clear();
   poslines.clear();
+  bool print_newline = false;
 
   std::string line;
   size_t nread = 0;
   while (std::getline(data, line)) {
     ++stats.lc;
+    // give user some idea of progress
+    print_newline = print_progress(++stats.lc);
     
     read_line(lines, line);
     read_pos_line(lines, poslines, line);
@@ -45,6 +58,8 @@ bool Reader::read_n_lines(PairLines &lines, PosLines &poslines, size_t N) {
 
   // signal if done processing corpus
   if (nread < N) {
+    if (print_newline)
+      std::cerr << std::endl;
     return true;
   }
   return false;

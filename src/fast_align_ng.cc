@@ -18,57 +18,37 @@
 #include <system_error>                 // for system_error
 #include <iomanip>                      // for operator<<, setw
 
- double Squared::learningrate_lk;
- double Squared::learningrate_o;
- double Absolute::learningrate_lk;
- double Absolute::learningrate_o;
+double Squared::learningrate_lk;
+double Squared::learningrate_o;
+double Absolute::learningrate_lk;
+double Absolute::learningrate_o;
 
 using namespace std;
 
-bool printProgress(size_t lc, bool flag) {
-  if (lc % 1000 == 0) {
-    cerr << '.';
-    flag = true;
-  }
-  if (lc % 50000 == 0) {
-    cerr << " [" << lc << "]" << endl;
-    flag = false;
-  }
-  return flag;
-}
-
-void print_align(Options const &opts, vector<double> &probs, vector<unsigned> &src, unsigned j, OutputNode *out) {
+unsigned max_align(Options const &opts, vector<double> &probs) {
   double max_p = -1;
-  int max_index = -1;
+  unsigned max_index = 0;
   unsigned i = opts.use_null ? 0 : 1;
-  for (; i <= src.size(); ++i) {
+  for (; i < probs.size(); ++i) {
     if (probs[i] > max_p) {
       max_index = i;
       max_p = probs[i];
     }
   }
-  if (max_index > 0) {
-    string &outputbuf = out->out.back();
-    if (opts.is_reverse)
-       outputbuf += to_string(j) + "-" + to_string(max_index - 1) + " ";
-    else
-      outputbuf += to_string(max_index - 1) + "-" + to_string(j) + " ";
-  }
+  return max_index;
 }
 
-void print_mat(vector<vector<double>> &probs){
-  for (size_t j = 1; j < probs[0].size(); ++j)
-  {
-    for (size_t i = 0; i < probs.size(); ++i){
-      cerr << setiosflags(ios::fixed) <<  setw(5) << setprecision(4) << log(probs[i][j]) << " ";
-    }
-    cerr << endl;
+void print_align(Options const &opts, unsigned i, unsigned j, OutputNode *out) {
+  if (i > 0) {
+    string &outputbuf = out->out.back();
+    if (opts.is_reverse)
+       outputbuf += to_string(j) + "-" + to_string(i - 1) + " ";
+    else
+      outputbuf += to_string(i - 1) + "-" + to_string(j) + " ";
   }
-  cerr << endl;
 }
 
 int main(int argc, char **argv) 
-try
 {
   ios_base::sync_with_stdio(false);
 
@@ -86,6 +66,4 @@ try
   } else {
     return run<Absolute>(opts);
   }
-} catch (std::system_error &err) {
-  cerr << "System Error!\n" << err.what() << endl;
 }
