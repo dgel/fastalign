@@ -14,6 +14,11 @@
 //
 
 #include "model.h"
+#include <ext/alloc_traits.h>
+#include <cmath>                        // for log, pow
+#include <iomanip>                      // for operator<<, setw
+#include <iostream>                     // for operator<<, basic_ostream, etc
+#include "corpus.h"                     // for Dict
 
 using namespace std;
 

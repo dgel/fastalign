@@ -16,16 +16,15 @@
 #ifndef _MODEL_H_
 #define _MODEL_H_
 
-#include <algorithm>
-#include <vector>
-#include <utility>
-#include <unordered_map>
-#include <iostream>
-#include <iomanip>
-#include <boost/lexical_cast.hpp>
-#include <tuple>
+#include <algorithm>                    // for fill
+#include <string>                       // for string
+#include <tuple>                        // for tuple
+#include <unordered_map>                // for unordered_map
+#include <utility>                      // for pair
+#include <vector>                       // for vector
+#include "ttables.h"                    // for TTable
+class Dict;
 
-#include "ttables.h"
 
 struct Params {
   double kappa;

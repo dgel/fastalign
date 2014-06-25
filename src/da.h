@@ -44,6 +44,11 @@ struct Squared {
   static constexpr double init_learningrate_lk = 1000;
   static constexpr double init_learningrate_o = 1;
 
+  static constexpr double min_lk = -10;
+  static constexpr double max_lk = 30;
+  static constexpr double min_o = -1;
+  static constexpr double max_o = 1;
+
   static double Transform(const double x) {
     return x * x;
   }
@@ -125,6 +130,11 @@ struct Absolute {
 
   static constexpr double init_learningrate_lk = 1000;
   static constexpr double init_learningrate_o = 0.03;
+
+  static constexpr double min_lk = -10;
+  static constexpr double max_lk = 30;
+  static constexpr double min_o = -1;
+  static constexpr double max_o = 1;
 
   static double Transform(double x) {
     if (x < -cutoff) return -x;

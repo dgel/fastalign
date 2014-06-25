@@ -13,11 +13,10 @@
 // limitations under the License.
 //
 
-#include <iterator>
-#include <fstream>
-#include <memory>
-
 #include "fast_align_ng.h"
+#include <ext/alloc_traits.h>
+#include <system_error>                 // for system_error
+#include <iomanip>                      // for operator<<, setw
 
  double Squared::learningrate_lk;
  double Squared::learningrate_o;

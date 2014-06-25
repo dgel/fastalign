@@ -17,126 +17,23 @@
 #ifndef _FAST_ALIGN_H_
 #define _FAST_ALIGN_H_
 
-#include <utility>
-#include <memory>
-#include <fstream>
-#include <unordered_map>
-#include <queue>
-#include <thread>
-#include <mutex>
-#include <chrono>
+#include <math.h>                       // for log
+#include <algorithm>                    // for fill
+#include <iostream>                     // for operator<<, basic_ostream, etc
+#include <mutex>                        // for mutex, lock_guard
+#include <string>                       // for allocator, operator+, etc
+#include <thread>                       // for thread
+#include <utility>                      // for get, pair
+#include <vector>                       // for vector, vector<>::iterator
+#include "da.h"                         // for Diagonal
+#include "model.h"                      // for Stats, Params, Model, etc
+#include "opts.h"                       // for Options
+#include "reader.h"                     // for PosLines, PairLines, Reader
+#include "threaded_output.h"            // for OutputNode, ThreadedOutput
+#include "ttables.h"                    // for TTable
+#include "utils.h"                      // for par_map, n_ranges, etc
+class Dict;
 
-#include "da.h"
-#include "opts.h"
-
-struct OutputNode {
-  bool done = false;
-  std::vector<std::string> out;
-};
-
-struct ThreadedOutput {
-  bool done = false;
-  std::queue<OutputNode> que;
-};
-
-typedef std::vector<std::pair<std::vector<unsigned>,std::vector<unsigned>>> PairLines;
-typedef std::vector<std::vector<unsigned>> PosLines;
-
-class Reader {
-  std::ifstream data;
-  std::unique_ptr<std::ifstream> posdata;
-  Stats &stats;
-
-  bool is_reverse;
-
-public:
-  Dict dict;
-  Dict posdict;
-
-  Reader(std::string &datafile, std::string &posfile, Stats &stats, bool is_reverse) 
-  : data(datafile), stats(stats), is_reverse(is_reverse)
-  {
-    if (!data) {
-      std::cerr << "Can't read " << datafile << std::endl;
-      exit(1);
-    }
-
-    // gets deleted automatically
-    if (posfile != "")
-    {
-      posdata = std::unique_ptr<std::ifstream>(new std::ifstream(posfile));
-      if (!(*posdata)) {
-        std::cerr << "Can't read " << posfile << std::endl;
-        exit(1);
-      }
-    } else {
-      posdict.Convert("Default");
-    }
-  }
-
-
-
-  bool readNlines(PairLines &lines, PosLines &poslines, size_t N) {
-    std::cerr.flush();
-    lines.clear();
-    poslines.clear();
-
-    std::string line;
-    size_t nread = 0;
-    while (std::getline(data, line)) {
-      ++stats.lc;
-      lines.emplace_back();
-      if (is_reverse) {
-        dict.ParseLine(line, lines.back().second, lines.back().first);
-      } else {
-        dict.ParseLine(line, lines.back().first, lines.back().second);
-      }
-
-      if(lines.back().first.empty() || lines.back().second.empty()) {
-        std::cerr << "Error in line " << stats.lc << "\n" << line << std::endl;
-        exit(1);
-      }
-      if (posdata != nullptr) {
-        if (!std::getline(*posdata, line)) {
-          std::cerr << "POS file has too few lines" << std::endl;
-          std::exit(1);
-        }
-
-        size_t delimpos = line.find("|||");
-        poslines.emplace_back();
-
-        if (is_reverse) {
-          posdict.ConvertWhitespaceDelimitedLine(line, poslines.back(), 0, delimpos - 1);
-        } else {
-          posdict.ConvertWhitespaceDelimitedLine(line, poslines.back(), delimpos + 4);
-        }
-        if (lines.back().second.size() != poslines.back().size()) {
-          std::cerr << "POS line has fewer tags than trg line has words.\n"
-                       "Perhaps src and trg should be swapped?"
-               << std::endl;
-          exit(1);
-        }    
-      }
-      if (++nread == N)
-        break;
-    }
-
-    // signal if done processing corpus
-    if (nread < N) {
-      return true;
-    }
-    return false;
-  }
-
-  void rewind() {
-    data.clear();
-    data.seekg(0);
-    if (posdata) {
-      posdata->clear();
-      posdata->seekg(0);
-    }
-  }
-};
 
 bool printProgress(size_t lc, bool flag);
 void print_align(Options const &opts, std::vector<double> &probs, std::vector<unsigned> &src, unsigned j, OutputNode *out);
@@ -144,23 +41,14 @@ void print_mat(std::vector<std::vector<double>> &probs);
 
 
 template <typename ModelType>
-double update_lk(double emp, double mod, double orig)
+double update(double emp, double mod, double orig,
+              double learnrate, double min, double max)
 {
-  orig += (mod - emp) * ModelType::learningrate_lk;
-  if (orig < -10) orig = -10;
-  if (orig > 30) orig = 30;
+  orig += (mod - emp) * learnrate;
+  if (orig < min) orig = min;
+  if (orig > max) orig = max;
   return orig;
 }
-
-template <typename ModelType>
-double update_o(double emp, double mod, double orig)
-{
-  orig += (mod - emp) * ModelType::learningrate_o;
-  if (orig < -1) orig = -1;
-  if (orig > 1) orig = 1;
-  return orig;
-}
-
 
 
 template <typename ModelType>
@@ -338,22 +226,37 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
       {
         auto const &params = getSafe(model.params, ind);
         auto &mod_counts = getSafe(stats.mod_counts, ind);
-        for (auto &pair : stats.size_index_counts[ind])
-        {
-          auto &tup = pair.first;
-          unsigned count = pair.second;
-          //std::cerr << "sent pos: " << std::get<2>(tup) << std::endl;
-          auto dzs = ModelType::ComputeDLogZs(std::get<2>(tup)
-                                      , std::get<0>(tup), std::get<1>(tup), params.kappa, params.lambda, params.offset);
-          mod_counts.kappa += dzs.kappa * count;
-          mod_counts.lambda += dzs.lambda * count;
-          mod_counts.offset += dzs.offset * count;
+        auto const& map = stats.size_index_counts[ind];
+        // assign each thread a range of buckets
+        std::vector<std::pair<size_t, size_t>> ranges = n_ranges(map.bucket_count(), opts.n_threads);
+        // sum DlogZs in each range in parallel
+        auto vals = par_map(ranges, [&](std::pair<size_t, size_t> &range) {
+          Params accum = {0,0,0};
+          // loop over buckets
+          for (size_t i = range.first; i < range.second; ++i) {
+            // loop over key,value pairs in bucket
+            for (auto iter = map.cbegin(i), end = map.cend(i); iter != end; ++iter) {
+              auto &tup = iter->first;
+              unsigned count = iter->second;
+              
+              auto dzs = ModelType::ComputeDLogZs(std::get<2>(tup)
+                                          , std::get<0>(tup), std::get<1>(tup), params.kappa, params.lambda, params.offset);
+              accum.kappa += dzs.kappa * count;
+              accum.lambda += dzs.lambda * count;
+              accum.offset += dzs.offset * count;
+            }
+          }
+          return accum;
+        });
+
+        // add to relevant mod_counts
+        for (Params &p: vals) {
+          mod_counts += p;
         }
       }
 
-      print_stats(stats.mod_counts, boost::lexical_cast<std::string>(ii) + " model al-", stats.denom);
+      print_stats(stats.mod_counts, std::to_string(ii) + " model al-", stats.denom);
       
-
       if (opts.nosplit)
       {
         normalize_sum_counts(stats.mod_counts, stats.toks);
@@ -368,22 +271,18 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
         auto const &emp = stats.emp_counts[i];
         auto const &mod = stats.mod_counts[i];
 
-        // std::cerr << "updating parameter for POS: " << posdict.Convert(i) << std::endl;
-        // std::cerr << "original: " << params.kappa << " " << params.lambda << " " << params.offset << std::endl;
-        // std::cerr << "empirical: " << emp.kappa << " " << emp.lambda << " " << emp.offset << std::endl;
-        // std::cerr << "model: " << mod.kappa << " " << mod.lambda << " " << mod.offset << std::endl;
         if (iter >= opts.n_no_update_diag) {
-          params.kappa = update_lk<ModelType>(emp.kappa, mod.kappa, params.kappa);
-          params.lambda = update_lk<ModelType>(emp.lambda, mod.lambda, params.lambda);
+          params.kappa = update<ModelType>(emp.kappa, mod.kappa, params.kappa, 
+                                           ModelType::learningrate_lk, ModelType::min_lk, ModelType::max_lk);
+          params.lambda = update<ModelType>(emp.lambda, mod.lambda, params.lambda,
+                                            ModelType::learningrate_lk, ModelType::min_lk, ModelType::max_lk);
         }
         if (iter >= opts.n_no_update_offset)
-          params.offset = update_o<ModelType>(emp.offset, mod.offset, params.offset);
+          params.offset = update<ModelType>(emp.offset, mod.offset, params.offset,
+                                            ModelType::learningrate_o, ModelType::min_o, ModelType::max_o);
       }
       ModelType::learningrate_lk *= 0.9;
       ModelType::learningrate_o *= 0.9;
-      // std::cerr << std::endl;
-      // print_table(model.params, posdict, "  final ");
-      // std::cerr << std::endl;
     }
     
     std::cerr << std::endl;
@@ -397,59 +296,22 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
     model.ttable.UpdateFrom(stats.tcounts);
 }
 
-void handleOutput(ThreadedOutput &out, std::mutex &mut, size_t sleeptime) {
-  while (true) {
-    if (mut.try_lock()) {
-      while (!out.que.empty() && out.que.front().done) {
-        auto &head = out.que.front().out;
-        for (std::string &line : head) {
-          if (!line.empty())
-            line.pop_back();
-          std::cout << line << std::endl;
-        }
-        std::cerr << std::endl;
-        out.que.pop();
-      }
-      mut.unlock();
-      if (out.done) {
-        return;
-      }
-    } 
-    std::this_thread::sleep_for (std::chrono::seconds(sleeptime));
-  }
-}
-
-
-
-template <typename F, typename... Args>
-void runN(size_t N, F func, Args &... args) {
-  std::vector<std::thread> threads;
-  for (size_t i = 0; i < N; ++i) {
-    threads.emplace_back(func, std::ref(args)...);
-  }
-  for (std::thread &t : threads) {
-    t.join();
-  }
-}
-
 template <typename ModelType>
-void countWorker(Reader &reader, ThreadedOutput &outp, std::mutex &iomut, Model &model, Stats &stats, std::mutex &statsmut, Options &opts, unsigned iter) {
+void countWorker(Reader &reader, ThreadedOutput &outp, Model &model, 
+                 Stats &stats, std::mutex &statsmut, Options &opts, unsigned iter, unsigned N) {
   PairLines lines;
   PosLines pos;
   Stats localstats;
   bool done = false;
-  // collect counts 1000 lines at a time
+  // collect counts N lines at a time
   while (!done) {
     localstats.reset();
     OutputNode *out;
-    // create scope for lock
-    {
-      std::lock_guard<std::mutex> io_lock(iomut);
-      done = reader.readNlines(lines, pos, 3500);
-      if (lines.size() == 0)
-        return;
-      outp.que.emplace();
-      out = &outp.que.back();
+    done = reader.read_n_lines_threaded(lines, pos, N, outp, out);
+
+    if (lines.size() == 0) {
+      out->done = true;
+      return;
     }
     count<ModelType>(lines, pos, model, localstats, opts, iter, out);
     out->done = true;
@@ -469,10 +331,10 @@ int run(Options &opts) {
   
   Reader reader(opts.input, opts.pos_filename, stats, opts.is_reverse);
   opts.kNULL = reader.dict.kNULL_;
-  ThreadedOutput outp;
-  std::mutex iomut;
+
+  ThreadedOutput outp(reader.iomut);
   
-  std::thread outputthread(handleOutput, std::ref(outp), std::ref(iomut), 30);
+  std::thread outputthread(handleOutput, std::ref(outp), 5);
 
   for (unsigned iter = 0; iter < opts.ITERATIONS; ++iter) {
     const bool final_iteration = (iter == (opts.ITERATIONS - 1));
@@ -482,7 +344,8 @@ int run(Options &opts) {
     stats.reset();
     reader.rewind();
 
-    runN(opts.n_threads, countWorker<ModelType>, reader, outp, iomut, model, stats, statsmut, opts, iter);
+    run_n(opts.n_threads, countWorker<ModelType>, reader, outp, model, 
+          stats, statsmut, opts, iter, opts.batch_size);
     
     // make update if necessary
     stats.count_toks();
@@ -492,10 +355,8 @@ int run(Options &opts) {
       update<ModelType>(model, stats, reader.posdict, opts, iter);
     }
   }
-  {
-    std::lock_guard<std::mutex> lock(iomut);
-    outp.done = true;
-  }
+  outp.finished();
+
   // after last iteration, write probabilities
   if (!opts.conditional_probability_filename.empty()) {
     std::cerr << "conditional probabilities: " << opts.conditional_probability_filename

@@ -35,6 +35,9 @@ void parseArgs(int argc, char **argv, Options &opts) {
     ValueArg<size_t> oThreads("", "parallel",
                            "number of threads to use (default = 1)",
                            false, 1, "unsigned", cmd);
+    ValueArg<size_t> oBatchSize("", "batch_size",
+                           "number of lines for a thread to process at a time",
+                           false, 7500, "unsigned", cmd);
     ValueArg<double> oP0("p", "p0", "p_null parameter (default = 0.08)", false,
                          0.08, "double", cmd);
     ValueArg<double> oKappa(
@@ -88,6 +91,8 @@ void parseArgs(int argc, char **argv, Options &opts) {
     opts.pos_filename = oPos.getValue();
     opts.ITERATIONS = oIter.getValue();
     opts.n_threads = oThreads.getValue();
+    opts.batch_size = oBatchSize.getValue();
+
     opts.prob_align_null = oP0.getValue();
     opts.prob_align_not_null = 1. - opts.prob_align_null;
 

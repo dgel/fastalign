@@ -25,6 +25,7 @@
 #include <set>
 #include <unordered_map>
 #include <functional>
+#include <cassert>
     
 class Dict {
   typedef std::unordered_map<std::string, unsigned,
