@@ -36,7 +36,7 @@ void Stats::print(Dict &posdict) {
 
   if (first_iteration) {
     double mean_srclen_multiplier = tot_len_ratio / lc;
-    cerr << "expected target length = source length * "
+    cerr << "\nexpected target length = source length * "
          << mean_srclen_multiplier << endl;
     first_iteration = false;
   }
@@ -46,7 +46,6 @@ void Stats::print(Dict &posdict) {
   cerr << "     cross entropy: " << (-base2_likelihood / denom) << endl;
   cerr << "        perplexity: " << pow(2.0, -base2_likelihood / denom) << endl;
   cerr << "      posterior p0: " << c0 / denom << endl;
-  cerr << "       size & index counts: " << size_index_counts.size() << endl;
   cerr << endl;
 }
 

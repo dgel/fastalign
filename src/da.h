@@ -38,9 +38,6 @@ namespace DiagonalAlignment {
 
 // likely doesn't work atm
 struct Squared {
-  static double learningrate_lk;
-  static double learningrate_o;
-
   static constexpr double init_learningrate_lk = 1000;
   static constexpr double init_learningrate_o = 1;
 
@@ -123,11 +120,6 @@ struct Squared {
 
 
 struct Absolute {
-  static constexpr double cutoff = 0.01;
-
-  static double learningrate_lk;
-  static double learningrate_o;
-
   static constexpr double init_learningrate_lk = 1000;
   static constexpr double init_learningrate_o = 0.03;
 
@@ -137,15 +129,14 @@ struct Absolute {
   static constexpr double max_o = 1;
 
   static double Transform(double x) {
-    if (x < -cutoff) return -x;
-    if (x > cutoff) return x;
-    return (x * x) / cutoff;
+    if (x < 0) return -x;
+    else return x;
   }
 
   static double dTransform(double x) {
-    if (x < -cutoff) return -1;
-    if (x > cutoff) return 1;
-    return x / cutoff;
+    if (x < 0) return -1;
+    if (x > 0) return 1;
+    return 0;
   }
 
 
@@ -207,7 +198,6 @@ struct Absolute {
     }
     pot *= lambda;
 
-    //std::cerr << "prior offset: " << (pob + pot)/z << std::endl;
     return {pcb/z, pct/z, (pob + pot) /z};
   }
 };

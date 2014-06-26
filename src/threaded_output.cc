@@ -24,7 +24,6 @@ void handleOutput(ThreadedOutput &out, size_t sleeptime) {
             line.pop_back();
           std::cout << line << std::endl;
         }
-        std::cerr << std::endl;
         out.que.pop();
       }
       out.iomut.unlock();

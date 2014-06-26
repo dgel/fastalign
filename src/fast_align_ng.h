@@ -198,7 +198,10 @@ void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const O
 
 template <typename ModelType>
 void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter) {
-  bool update_tension = opts.favor_diagonal && opts.optimize_tension && (iter >= opts.n_no_update_diag || iter >= opts.n_no_update_offset);
+
+  bool update_tension = opts.favor_diagonal 
+                      && opts.optimize_tension 
+                      && (iter >= opts.n_no_update_diag || iter >= opts.n_no_update_offset);
   if (update_tension) {
 
 
@@ -210,8 +213,8 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
       normalize_counts(stats.emp_counts, stats.toks);
     }
 
-    ModelType::learningrate_lk = ModelType::init_learningrate_lk;
-    ModelType::learningrate_o = ModelType::init_learningrate_o;
+    double learningrate_lk = ModelType::init_learningrate_lk;
+    double learningrate_o = ModelType::init_learningrate_o;
 
     // 8 update steps
     for (int ii = 0; ii < 8; ++ii) {
@@ -268,16 +271,16 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
 
         if (iter >= opts.n_no_update_diag) {
           params.kappa = update<ModelType>(emp.kappa, mod.kappa, params.kappa, 
-                                           ModelType::learningrate_lk, ModelType::min_lk, ModelType::max_lk);
+                                           learningrate_lk, ModelType::min_lk, ModelType::max_lk);
           params.lambda = update<ModelType>(emp.lambda, mod.lambda, params.lambda,
-                                            ModelType::learningrate_lk, ModelType::min_lk, ModelType::max_lk);
+                                            learningrate_lk, ModelType::min_lk, ModelType::max_lk);
         }
         if (iter >= opts.n_no_update_offset)
           params.offset = update<ModelType>(emp.offset, mod.offset, params.offset,
-                                            ModelType::learningrate_o, ModelType::min_o, ModelType::max_o);
+                                            learningrate_o, ModelType::min_o, ModelType::max_o);
       }
-      ModelType::learningrate_lk *= 0.9;
-      ModelType::learningrate_o *= 0.9;
+      learningrate_lk *= 0.9;
+      learningrate_o *= 0.9;
     }
     
     std::cerr << std::endl;

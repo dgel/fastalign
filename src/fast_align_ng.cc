@@ -18,11 +18,6 @@
 #include <system_error>                 // for system_error
 #include <iomanip>                      // for operator<<, setw
 
-double Squared::learningrate_lk;
-double Squared::learningrate_o;
-double Absolute::learningrate_lk;
-double Absolute::learningrate_o;
-
 using namespace std;
 
 unsigned max_align(Options const &opts, vector<double> &probs) {

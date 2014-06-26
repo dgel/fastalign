@@ -8,7 +8,7 @@
 
 Reader::Reader(std::string &datafile, std::string &posfile, Stats &stats,
                bool is_reverse)
-    : data(datafile), stats(stats), is_reverse(is_reverse), iomut() {
+    : data(datafile), stats(stats), is_reverse(is_reverse), print_newline(false), iomut() {
 
   if (!data) {
     std::cerr << "Can't read " << datafile << std::endl;
@@ -41,12 +41,10 @@ bool print_progress(size_t lc) {
 bool Reader::read_n_lines(PairLines &lines, PosLines &poslines, size_t N) {
   lines.clear();
   poslines.clear();
-  bool print_newline = false;
 
   std::string line;
   size_t nread = 0;
   while (std::getline(data, line)) {
-    ++stats.lc;
     // give user some idea of progress
     print_newline = print_progress(++stats.lc);
     
@@ -58,8 +56,10 @@ bool Reader::read_n_lines(PairLines &lines, PosLines &poslines, size_t N) {
 
   // signal if done processing corpus
   if (nread < N) {
-    if (print_newline)
+    if (print_newline) {
       std::cerr << std::endl;
+      print_newline = false;
+    }
     return true;
   }
   return false;
@@ -112,6 +112,7 @@ void Reader::rewind() {
     posdata->clear();
     posdata->seekg(0);
   }
+  print_newline = true;
 }
 
 bool Reader::read_n_lines_threaded(PairLines &lines, PosLines &pos, size_t N, ThreadedOutput &outp, OutputNode *&out) {

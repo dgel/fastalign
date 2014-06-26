@@ -23,6 +23,7 @@ class Reader {
   Stats &stats;
 
   bool is_reverse;
+  bool print_newline;
 
   void read_line(PairLines &lines, std::string &line);
   void read_pos_line(PairLines const &lines, PosLines &poslines, std::string &line);
