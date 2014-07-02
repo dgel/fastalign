@@ -42,25 +42,10 @@ double update(double emp, double mod, double orig,
               double learnrate, double min, double max, double reg_param, double reg_target)
 {
   orig += (mod - emp) * learnrate + reg_param * (reg_target - orig);
-
-  //std::cerr << "update: (" << mod << " - " << emp << ") * " << learnrate << " = " << (mod - emp) * learnrate << std::endl;
-
   if (orig < min) orig = min;
   if (orig > max) orig = max;
   return orig;
 }
-
-// see if I can speed things up by not constantly stack-allocating doubles and Words
-namespace {
-  __thread Token f_j;
-  __thread double sum;
-  __thread double prob_a_i;
-  __thread size_t diag;
-  __thread double p;
-  __thread double tmpoffset = 0;
-  __thread double tmp;
-}
-
 
 template <typename ModelType>
 double processWord(Model &model, Stats &stats, const Options &opts, std::vector<double> &probs,
@@ -69,14 +54,9 @@ double processWord(Model &model, Stats &stats, const Options &opts, std::vector<
   auto const &params = getSafe(model.params, posNum, Params{opts.startkappa, opts.startlambda, 0});
   auto &emp_counts = getSafe(stats.emp_counts, posNum);
 
-  // const Token f_j = trg[j];
-  // double sum = 0;
-  // double prob_a_i =
-  //     1.0 / (src.size() + (opts.use_null ? 1 : 0));  // uniform (model 1)
-
-  f_j = trg[j];
-  sum = 0;
-  prob_a_i =
+  const Token f_j = trg[j];
+  double sum = 0;
+  double prob_a_i =
       1.0 / (src.size() + (opts.use_null ? 1 : 0));  // uniform (model 1)
 
   // compute probability of alignment positions (including null if
@@ -90,7 +70,7 @@ double processWord(Model &model, Stats &stats, const Options &opts, std::vector<
 
   // find diagonal -- i and j have switched meaning compared to paper
     //                  same for m and n
-  diag = 0;
+  size_t diag = 0;
   // need 2 loops for favor_diagonal case
   if (opts.favor_diagonal) {
     diag = DiagonalAlignment::Diagonal(j+1, trg.size(), src.size(), params.offset);
@@ -122,16 +102,16 @@ double processWord(Model &model, Stats &stats, const Options &opts, std::vector<
 
   // update counts if necessary
   if (!final_iteration) {
-    //double p;
+    double p;
     // add to counts
     if (opts.use_null) {
       p = probs[0] / sum;
       stats.c0 += p;
       stats.tcounts.Increment(opts.kNULL, f_j, p);
     }
-    //double tmpoffset = 0;
+    double tmpoffset = 0;
     tmpoffset = 0;
-    //double tmp;
+    double tmp;
     // empirical counts
     for (size_t i = 1; i <= diag; ++i) {
       p = probs[i] / sum;
@@ -141,9 +121,6 @@ double processWord(Model &model, Stats &stats, const Options &opts, std::vector<
       tmp = ModelType::dTransform(x) * p;
       emp_counts.lambda += x * tmp ;
       tmpoffset += tmp;
-      // double x = ModelType::Feature(j+1, i, trg.size(), src.size(), params.offset);
-      // emp_counts.kappa += ModelType::Transform(x) * p;
-      // tmpoffset += ModelType::dTransform(x) * p;
     }
     emp_counts.offset += tmpoffset * params.kappa;
 
@@ -207,14 +184,14 @@ void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const O
         curtoks.first += diag;
         curtoks.second += src.size() - diag;
 
-        getSafe(stats.size_index_counts, posNum)[std::tuple<unsigned short, unsigned short, unsigned short>(trg.size(), src.size(), j+1)] += 1;
+        stats.get_size_index_count(posNum)[std::tuple<unsigned short, unsigned short, unsigned short>(trg.size(), src.size(), j+1)] += 1;
       }
 
       // find probability for every position
       double sum =
           processWord<ModelType>(model, stats, opts, probs, src, trg, j, posNum, final_iteration);
       if (final_iteration) {
-        //print_align(opts, max_align(opts, probs),  j, out);
+        print_align(opts, max_align(opts, probs),  j, out);
       }
       stats.likelihood += log(sum);
     }
@@ -226,7 +203,7 @@ void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const O
 }
 
 template <typename ModelType>
-void count_single_thread(Reader &reader, Model &model, Stats &stats, const Options &opts, size_t iter, OutputNode *out) {
+void count_single_thread(Reader &reader, ThreadedOutput &outp, Model &model, Stats &stats, const Options &opts, size_t iter) {
   std::vector<double> probs;
 
   bool first_iter = iter == 0;
@@ -235,9 +212,18 @@ void count_single_thread(Reader &reader, Model &model, Stats &stats, const Optio
   PairLine lines;
   Line posdata;
 
+  OutputNode *out = nullptr;
+
   size_t lineno = 0;
 
   while (reader.read_1_line(lines, posdata)) {
+    if (final_iteration && lineno % opts.batch_size == 0) {
+      if (out) {
+        out->done = true;
+      }
+      out = outp.getOutput();
+    }
+
     std::vector<Token> &src = std::get<0>(lines);
     std::vector<Token> &trg = std::get<1>(lines);
 
@@ -267,7 +253,7 @@ void count_single_thread(Reader &reader, Model &model, Stats &stats, const Optio
         curtoks.first += diag;
         curtoks.second += src.size() - diag;
 
-        getSafe(stats.size_index_counts, posNum)[std::tuple<unsigned short, unsigned short, unsigned short>(trg.size(), src.size(), j+1)] += 1;
+        stats.get_size_index_count(posNum)[std::tuple<unsigned short, unsigned short, unsigned short>(trg.size(), src.size(), j+1)] += 1;
       }
 
       // find probability for every position
@@ -279,6 +265,9 @@ void count_single_thread(Reader &reader, Model &model, Stats &stats, const Optio
       stats.likelihood += log(sum);
     }
     ++lineno;
+  }
+  if (out) {
+    out->done = true;
   }
 }
 
@@ -324,7 +313,7 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
           for (size_t i = range.first; i < range.second; ++i) {
             //double tmp = 0;
             // loop over key,value pairs in bucket
-            for (auto iter = map.cbegin(i), end = map.cend(i); iter != end; ++iter) {
+            for (auto iter = map.begin(i), end = map.end(i); iter != end; ++iter) {
               auto &tup = iter->first;
               size_t count = iter->second;
 
@@ -428,24 +417,23 @@ int run(Options &opts) {
   opts.kNULL = reader.dict.kNULL_;
 
   ThreadedOutput outp(reader.iomut);
-  OutputNode *out;
-  outp.que.emplace();
-  out = &outp.que.back();
 
-  //std::thread outputthread(handleOutput, std::ref(outp), 5);
+  std::thread outputthread(handleOutput, std::ref(outp), 5);
 
   for (unsigned iter = 0; iter < opts.ITERATIONS; ++iter) {
     const bool final_iteration = (iter == (opts.ITERATIONS - 1));
     std::cerr << "ITERATION " << (iter + 1) << (final_iteration ? " (FINAL)" : "")
          << std::endl;
 
-
     stats.reset();
     reader.rewind();
 
-    //run_n(opts.n_threads, countWorker<ModelType>, reader, outp, model,
-    //      stats, statsmut, opts, iter, opts.batch_size);
-    count_single_thread<ModelType>(reader, model, stats, opts, iter, out);
+    if (opts.n_threads > 0) {
+      run_n(opts.n_threads, countWorker<ModelType>, reader, outp, model,
+            stats, statsmut, opts, iter, opts.batch_size);
+    } else {
+      count_single_thread<ModelType>(reader, outp, model, stats, opts, iter);
+    }
 
     // make update if necessary
     stats.count_toks();
@@ -455,10 +443,6 @@ int run(Options &opts) {
       update<ModelType>(model, stats, reader.posdict, opts, iter);
     }
   }
-  out->done = true;
-  outp.finished();
-  handleOutput(outp, 1);
-
   outp.finished();
 
   // after last iteration, write probabilities
@@ -467,7 +451,7 @@ int run(Options &opts) {
          << std::endl;
     model.ttable.ExportToFile(opts.conditional_probability_filename, reader.dict);
   }
-  //outputthread.join();
+  outputthread.join();
   return 0;
 }
 

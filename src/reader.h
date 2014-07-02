@@ -8,6 +8,8 @@
 #include <utility>                      // for pair
 #include <vector>                       // for vector
 #include "corpus.h"                     // for Dict
+
+
 struct OutputNode;
 struct Stats;
 struct ThreadedOutput;

@@ -23,18 +23,24 @@
 #include <fstream>
 #include <vector>
 #include <set>
-#include <unordered_map>
 #include <functional>
 #include <cassert>
+
+#include "map_type.h"
 
 typedef std::uint32_t Token;
     
 class Dict {
-  typedef std::unordered_map<std::string, Token,
+  typedef MapType<std::string, Token,
                                   std::hash<std::string> > Map;
 
  public:
   Dict() : b0_("<bad0>"), eps_("<eps>") {
+    #ifdef __NEED_SET_EMPTY_KEY__
+      d_.set_empty_key("<<e>>");
+      d_.set_deleted_key("<<d>>");
+    #endif
+
     words_.reserve(1000);
     words_.push_back("<bad0>");
     kNULL_ = Convert(eps_);

@@ -37,10 +37,12 @@ struct ThreadedOutput {
 
   ThreadedOutput(std::mutex &mut);
   void finished();
+  OutputNode *getOutput();
 };
 
 
 void handleOutput(ThreadedOutput &out, size_t sleeptime);
+
 
 
 #endif

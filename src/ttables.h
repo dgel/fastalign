@@ -20,6 +20,7 @@
 
 #include <vector>
 #include "corpus.h"
+#include "map_type.h"
 
 namespace Md {
 inline double digamma(double x) {
@@ -36,7 +37,7 @@ inline double digamma(double x) {
 }
 
 class TTable {
-  typedef std::unordered_map<Token, double> Word2Double;
+  typedef MapType<Token, double> Word2Double;
   typedef std::vector<Word2Double> Word2Word2Double;
   Word2Word2Double ttable;
 
@@ -56,15 +57,29 @@ class TTable {
   }
 
   inline void Increment(const Token& e, const Token& f) { 
-    if (e >= ttable.size()) {
+    size_t oldsize = ttable.size();
+    if (e >= oldsize) {
       ttable.resize(e + 1);
+      #ifdef __NEED_SET_EMPTY_KEY__
+      for (Token i = oldsize; i <= e; ++i) {
+        ttable[i].set_empty_key(std::numeric_limits<Token>::max());
+        ttable[i].set_deleted_key(std::numeric_limits<Token>::max() - 1);
+      }
+      #endif
     }
     ttable[e][f] += 1.0; 
   }
   
   inline void Increment(const Token& e, const Token& f, double x) {
-    if (e >= ttable.size()) {
+    size_t oldsize = ttable.size();
+    if (e >= oldsize) {
       ttable.resize(e + 1);
+      #ifdef __NEED_SET_EMPTY_KEY__
+      for (Token i = oldsize; i <= e; ++i) {
+        ttable[i].set_empty_key(std::numeric_limits<Token>::max());
+        ttable[i].set_deleted_key(std::numeric_limits<Token>::max() - 1);
+      }
+      #endif
     }
     ttable[e][f] += x;
   }
@@ -107,8 +122,16 @@ class TTable {
 
   // adds counts from another TTable - probabilities change!
   TTable& operator+=(const TTable& rhs) {
-    if (ttable.size() < rhs.ttable.size()) {
-      ttable.resize(rhs.ttable.size());
+    size_t oldsize = ttable.size();
+    size_t newsize = rhs.ttable.size();
+    if (oldsize < newsize) {
+      ttable.resize(newsize);
+      #ifdef __NEED_SET_EMPTY_KEY__
+      for (Token i = oldsize; i < newsize; ++i) {
+        ttable[i].set_empty_key(std::numeric_limits<Token>::max());
+        ttable[i].set_deleted_key(std::numeric_limits<Token>::max() - 1);
+      }
+      #endif
     }
     for (size_t ind = 0; ind < rhs.ttable.size(); ++ind) {
       Word2Double const &cpd = rhs.ttable[ind];
