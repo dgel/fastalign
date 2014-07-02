@@ -20,10 +20,10 @@
 
 using namespace std;
 
-unsigned max_align(Options const &opts, vector<double> &probs) {
+size_t max_align(Options const &opts, vector<double> &probs) {
   double max_p = -1;
-  unsigned max_index = 0;
-  unsigned i = opts.use_null ? 0 : 1;
+  size_t max_index = 0;
+  size_t i = opts.use_null ? 0 : 1;
   for (; i < probs.size(); ++i) {
     if (probs[i] > max_p) {
       max_index = i;
@@ -46,19 +46,12 @@ void print_align(Options const &opts, unsigned i, unsigned j, OutputNode *out) {
 int main(int argc, char **argv) 
 {
   ios_base::sync_with_stdio(false);
-
   Options opts;
-  parseArgs(argc, argv, opts);
-
-  if (opts.variational_bayes && opts.alpha <= 0.0) {
-    cerr << "--alpha must be > 0\n";
-    return 1;
-  }
-
-  if (opts.squared_model) {
-    // most likely doesn't work atm
-    return run<Squared>(opts);
-  } else {
+  if (opts.absolute_model) {
+    parseArgs<Absolute>(argc, argv, opts);
     return run<Absolute>(opts);
+  } else {
+    parseArgs<Squared>(argc, argv, opts);
+    return run<Squared>(opts);
   }
 }

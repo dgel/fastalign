@@ -59,6 +59,7 @@ inline tup_map &operator+=(tup_map &lhs, tup_map const &rhs) {
 }
 
 typedef std::pair<unsigned, unsigned> uintpair;
+
 inline uintpair &operator+=(uintpair &lhs, uintpair const &rhs) {
   lhs.first += rhs.first;
   lhs.second += rhs.second;
@@ -131,7 +132,7 @@ struct Model {
 
 // get param or make new one if not present
 template <typename T>
-T &getSafe(std::vector<T> &vec, unsigned id, T fillval = T()) {
+inline T &getSafe(std::vector<T> &vec, size_t id, T fillval = T()) {
   // make new and return ref
   if (vec.size() <= id)
   {

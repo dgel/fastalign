@@ -42,18 +42,18 @@ bool Reader::read_n_lines(PairLines &lines, PosLines &poslines, size_t N) {
   lines.clear();
   poslines.clear();
 
-  std::string line;
   size_t nread = 0;
-  while (std::getline(data, line)) {
+  while (std::getline(data, readbuf)) {
     // give user some idea of progress
     print_newline = print_progress(++stats.lc);
-    
-    read_line(lines, line);
-    read_pos_line(lines, poslines, line);
-    
+    lines.emplace_back();
+    read_line(lines.back());
+    if (posdata != nullptr) {
+      poslines.emplace_back();
+      read_pos_line(poslines.back(), is_reverse ? lines.back().second.size() : lines.back().first.size());
+    }
     if (++nread == N) break;
   }
-
   // signal if done processing corpus
   if (nread < N) {
     if (print_newline) {
@@ -65,43 +65,55 @@ bool Reader::read_n_lines(PairLines &lines, PosLines &poslines, size_t N) {
   return false;
 }
 
-void Reader::read_line(PairLines &lines, std::string &line) {
-  lines.emplace_back();
+bool Reader::read_1_line(PairLine &lines, Line &pos) {
+  if (std::getline(data, readbuf)) {
+    // give user some idea of progress
+    print_newline = print_progress(++stats.lc);
+
+    read_line(lines);
+
+    if (posdata != nullptr) {
+      read_pos_line(pos, is_reverse ? lines.second.size() : lines.first.size());
+    }
+    return true; 
+  }
+  // signal if done processing corpus
+  if (print_newline) {
+    std::cerr << std::endl;
+    print_newline = false;
+  }
+  return false;
+}
+
+
+void Reader::read_line(PairLine &pair) {
   if (is_reverse) {
-    dict.ParseLine(line, lines.back().second, lines.back().first);
+    dict.ParseLine(readbuf, &pair.second, &pair.first);
   } else {
-    dict.ParseLine(line, lines.back().first, lines.back().second);
+    dict.ParseLine(readbuf, &pair.first, &pair.second);
   }
 
-  if (lines.back().first.empty() || lines.back().second.empty()) {
-    std::cerr << "Error in line " << stats.lc << "\n" << line << std::endl;
+  if (pair.first.empty() || pair.second.empty()) {
+    std::cerr << "Error in line " << stats.lc << "\n" << readbuf << std::endl;
     exit(1);
   }
 }
 
-void Reader::read_pos_line(PairLines const &lines, PosLines &poslines, std::string &line) {
-  if (posdata != nullptr) {
-    if (!std::getline(*posdata, line)) {
-      std::cerr << "POS file has too few lines" << std::endl;
-      std::exit(1);
-    }
-
-    size_t delimpos = line.find("|||");
-    poslines.emplace_back();
-
-    if (is_reverse) {
-      posdict.ConvertWhitespaceDelimitedLine(line, poslines.back(), 0,
-                                             delimpos - 1);
-    } else {
-      posdict.ConvertWhitespaceDelimitedLine(line, poslines.back(),
-                                             delimpos + 4);
-    }
-    if (lines.back().second.size() != poslines.back().size()) {
-      std::cerr << "Error: POS line has fewer tags than trg line has words.\n"
-                   "    Perhaps src and trg should be swapped?" << std::endl;
-      std::cerr << "In line: " << stats.lc << std::endl;
-      exit(1);
-    }
+void Reader::read_pos_line(Line &posline, size_t n_tokens) {
+  if (!std::getline(*posdata, readbuf)) {
+    std::cerr << "POS file has too few lines" << std::endl;
+    std::exit(1);
+  }
+  if (is_reverse) {
+    posdict.ParseLine(readbuf, &posline, nullptr);
+  } else {
+    posdict.ParseLine(readbuf, nullptr, &posline);
+  }
+  if (n_tokens != posline.size()) {
+    std::cerr << "Error: POS line has fewer tags than trg line has words.\n"
+                 "    Perhaps src and trg should be swapped?" << std::endl;
+    std::cerr << "In line: " << stats.lc << std::endl;
+    exit(1);
   }
 }
 
@@ -115,10 +127,13 @@ void Reader::rewind() {
   print_newline = true;
 }
 
-bool Reader::read_n_lines_threaded(PairLines &lines, PosLines &pos, size_t N, ThreadedOutput &outp, OutputNode *&out) {
+ReadStatus Reader::read_n_lines_threaded(PairLines &lines, PosLines &pos, size_t N, ThreadedOutput &outp, OutputNode *&out) {
   std::lock_guard<std::mutex> io_lock(iomut);
   bool done = read_n_lines(lines, pos, N);
+  if (lines.size() == 0) {
+    return ReadStatus::NOTHING_READ;
+  }
   outp.que.emplace();
   out = &outp.que.back();
-  return done;
+  return done? ReadStatus::FINISHED : ReadStatus::CONTINUE;
 }

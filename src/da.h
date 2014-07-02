@@ -38,28 +38,31 @@ namespace DiagonalAlignment {
 
 // likely doesn't work atm
 struct Squared {
-  static constexpr double init_learningrate_lk = 1000;
-  static constexpr double init_learningrate_o = 1;
+  static constexpr double init_learningrate_lk = 40000;
+  static constexpr double init_learningrate_o = .1;
 
-  static constexpr double min_lk = -10;
-  static constexpr double max_lk = 30;
+  static constexpr double min_lk = -20;
+  static constexpr double max_lk = 150;
   static constexpr double min_o = -1;
   static constexpr double max_o = 1;
 
-  static double Transform(const double x) {
+  static constexpr double init_kappa = 70;
+  static constexpr double init_lambda = 70;
+
+  static inline double Transform(const double x) {
     return x * x;
   }
 
-  static double dTransform(const double x) {
+  static inline double dTransform(const double x) {
     return x;
   }
 
-  static double Feature(const unsigned i, const unsigned j,
+  static inline double Feature(const unsigned i, const unsigned j,
                                const unsigned m, const unsigned n, const double o) {
     return double(i) / (m+1) - double(j) / (n+1) + o;
   }
 
-  static double UnnormalizedProb(const unsigned i, const unsigned j,
+  static inline double UnnormalizedProb(const unsigned i, const unsigned j,
                                  const unsigned m, const unsigned n,
                                  const double kappa, const double offset) {
     return exp(Transform(Feature(i, j, m, n, offset)) * kappa * -1);
@@ -121,31 +124,34 @@ struct Squared {
 
 struct Absolute {
   static constexpr double init_learningrate_lk = 1000;
-  static constexpr double init_learningrate_o = 0.03;
+  static constexpr double init_learningrate_o = 0.025;
 
   static constexpr double min_lk = -10;
   static constexpr double max_lk = 30;
   static constexpr double min_o = -1;
   static constexpr double max_o = 1;
 
-  static double Transform(double x) {
+  static constexpr double init_kappa = 8;
+  static constexpr double init_lambda = 8;
+
+  static inline double Transform(double x) {
     if (x < 0) return -x;
     else return x;
   }
 
-  static double dTransform(double x) {
+  static inline double dTransform(double x) {
     if (x < 0) return -1;
     if (x > 0) return 1;
     return 0;
   }
 
 
-  static double Feature(const unsigned i, const unsigned j,
+  static inline double Feature(const unsigned i, const unsigned j,
                                const unsigned m, const unsigned n, const double o) {
     return double(i) / (m+1) - double(j) / (n+1) + o;
   }
 
-  static double UnnormalizedProb(const unsigned i, const unsigned j,
+  static inline double UnnormalizedProb(const unsigned i, const unsigned j,
                                  const unsigned m, const unsigned n,
                                  const double kappa, const double offset) {
     return exp(Transform(Feature(i, j, m, n, offset)) * kappa * -1);
@@ -183,6 +189,8 @@ struct Absolute {
     double pot = 0;
     double pob = 0;
 
+    //std::cerr << "position: " << i << std::endl;
+
     for (size_t j = 1; j <= floor; ++j) {
       double x = Feature(i,j,m,n,offset);
       double single = UnnormalizedProb(i,j,m,n,kappa,offset);
@@ -197,6 +205,8 @@ struct Absolute {
       pot += single * dTransform(x);
     }
     pot *= lambda;
+
+    //std::cerr << "contribution: " << (pob + pot) / z << std::endl;
 
     return {pcb/z, pct/z, (pob + pot) /z};
   }

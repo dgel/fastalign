@@ -34,30 +34,49 @@
 #include "utils.h"                      // for par_map, n_ranges, etc
 class Dict;
 
-unsigned max_align(Options const &opts, std::vector<double> &probs);
-void print_align(Options const &opts, unsigned i, unsigned j, OutputNode *out);
+size_t max_align(Options const &opts, std::vector<double> &probs);
+void print_align(Options const &opts, Token i, Token j, OutputNode *out);
 
 template <typename ModelType>
 double update(double emp, double mod, double orig,
-              double learnrate, double min, double max)
+              double learnrate, double min, double max, double reg_param, double reg_target)
 {
-  orig += (mod - emp) * learnrate;
+  orig += (mod - emp) * learnrate + reg_param * (reg_target - orig);
+
+  //std::cerr << "update: (" << mod << " - " << emp << ") * " << learnrate << " = " << (mod - emp) * learnrate << std::endl;
+
   if (orig < min) orig = min;
   if (orig > max) orig = max;
   return orig;
 }
 
+// see if I can speed things up by not constantly stack-allocating doubles and Words
+namespace {
+  __thread Token f_j;
+  __thread double sum;
+  __thread double prob_a_i;
+  __thread size_t diag;
+  __thread double p;
+  __thread double tmpoffset = 0;
+  __thread double tmp;
+}
+
 
 template <typename ModelType>
 double processWord(Model &model, Stats &stats, const Options &opts, std::vector<double> &probs,
-                   std::vector<unsigned> &src, std::vector<unsigned> &trg, unsigned j, unsigned posNum,
+                   std::vector<unsigned> &src, std::vector<unsigned> &trg, unsigned j, Token posNum,
                    bool final_iteration) {
   auto const &params = getSafe(model.params, posNum, Params{opts.startkappa, opts.startlambda, 0});
   auto &emp_counts = getSafe(stats.emp_counts, posNum);
 
-  const unsigned f_j = trg[j];
-  double sum = 0;
-  double prob_a_i =
+  // const Token f_j = trg[j];
+  // double sum = 0;
+  // double prob_a_i =
+  //     1.0 / (src.size() + (opts.use_null ? 1 : 0));  // uniform (model 1)
+
+  f_j = trg[j];
+  sum = 0;
+  prob_a_i =
       1.0 / (src.size() + (opts.use_null ? 1 : 0));  // uniform (model 1)
 
   // compute probability of alignment positions (including null if
@@ -71,74 +90,82 @@ double processWord(Model &model, Stats &stats, const Options &opts, std::vector<
 
   // find diagonal -- i and j have switched meaning compared to paper
     //                  same for m and n
-  unsigned diag = 0;
-  if (opts.favor_diagonal) {
-    diag = DiagonalAlignment::Diagonal(j+1, trg.size(), src.size(), params.offset);
-  }
+  diag = 0;
   // need 2 loops for favor_diagonal case
   if (opts.favor_diagonal) {
-    double const az = ModelType::ComputeZ(j + 1, trg.size(), src.size(),
-                                     params.kappa, params.lambda, params.offset) /
-         opts.prob_align_not_null;
-
-
-    // up to diag uses kappa, beyond uses lambda;
-    for (unsigned i = 1; i <= diag; ++i) {
+    diag = DiagonalAlignment::Diagonal(j+1, trg.size(), src.size(), params.offset);
+    double az = 0;
+    for (size_t i = 1; i <= diag; ++i) {
       prob_a_i = ModelType::UnnormalizedProb(
-                       j + 1, i, trg.size(), src.size(), params.kappa, params.offset) /
-                   az;
+                       j + 1, i, trg.size(), src.size(), params.kappa, params.offset);
       probs[i] = model.ttable.prob(src[i - 1], f_j) * prob_a_i;
-      sum += probs[i];
+      az += prob_a_i;
     }
-    for (unsigned i = diag + 1; i <= src.size(); ++i) {
+    for (size_t i = diag + 1; i <= src.size(); ++i) {
       prob_a_i = ModelType::UnnormalizedProb(
-                       j + 1, i, trg.size(), src.size(), params.lambda, params.offset) /
-                   az;
+                       j + 1, i, trg.size(), src.size(), params.lambda, params.offset);
       probs[i] = model.ttable.prob(src[i - 1], f_j) * prob_a_i;
+      az += prob_a_i;
+    }
+    az = opts.prob_align_not_null / az;
+    for (size_t i = 1; i <= src.size(); ++i) {
+      probs[i] *= az;
       sum += probs[i];
     }
   // can keep single loop if not
   } else {
-    for (unsigned i = 1; i <= src.size(); ++i) {
+    for (size_t i = 1; i <= src.size(); ++i) {
       probs[i] = model.ttable.prob(src[i - 1], f_j) * prob_a_i;
       sum += probs[i];
     }
   }
- 
+
   // update counts if necessary
   if (!final_iteration) {
-    double p = 0;
+    //double p;
     // add to counts
     if (opts.use_null) {
       p = probs[0] / sum;
       stats.c0 += p;
       stats.tcounts.Increment(opts.kNULL, f_j, p);
     }
-    double tmpoffset = 0;
+    //double tmpoffset = 0;
+    tmpoffset = 0;
+    //double tmp;
     // empirical counts
-    for (unsigned i = 1; i <= diag; ++i) {
+    for (size_t i = 1; i <= diag; ++i) {
       p = probs[i] / sum;
       stats.tcounts.Increment(src[i - 1], f_j, p);
+      // optimization that happens to work for both modeltypes.
       double x = ModelType::Feature(j+1, i, trg.size(), src.size(), params.offset);
-      emp_counts.kappa += ModelType::Transform(x) * p;
-      tmpoffset += ModelType::dTransform(x) * p;
+      tmp = ModelType::dTransform(x) * p;
+      emp_counts.lambda += x * tmp ;
+      tmpoffset += tmp;
+      // double x = ModelType::Feature(j+1, i, trg.size(), src.size(), params.offset);
+      // emp_counts.kappa += ModelType::Transform(x) * p;
+      // tmpoffset += ModelType::dTransform(x) * p;
     }
     emp_counts.offset += tmpoffset * params.kappa;
+
     tmpoffset = 0;
-    for (unsigned i = diag + 1; i <= src.size(); ++i) {
+    for (size_t i = diag + 1; i <= src.size(); ++i) {
       p = probs[i] / sum;
       stats.tcounts.Increment(src[i - 1], f_j, p);
       double x = ModelType::Feature(j+1, i, trg.size(), src.size(), params.offset);
-      emp_counts.lambda += ModelType::Transform(x) * p;
-      tmpoffset += ModelType::dTransform(x) * p;
+      // optimization that happens to work for both modeltypes.
+      tmp = ModelType::dTransform(x) * p;
+      emp_counts.lambda += x * tmp ;
+      tmpoffset += tmp;
     }
+
     emp_counts.offset += tmpoffset * params.lambda;
+
   }
   return sum;
 }
 
 template <typename ModelType>
-void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const Options &opts, unsigned iter, OutputNode *out) {
+void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const Options &opts, size_t iter, OutputNode *out) {
   std::vector<double> probs;
 
   bool first_iter = iter == 0;
@@ -150,23 +177,85 @@ void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const O
     positer = posdata.begin();
   }
 
-  for (std::pair<std::vector<unsigned>, std::vector<unsigned>> &lines : in) {
-    std::vector<unsigned> &src = std::get<0>(lines);
-    std::vector<unsigned> &trg = std::get<1>(lines);
+  for (std::pair<std::vector<Token>, std::vector<Token>> &lines : in) {
+    std::vector<Token> &src = std::get<0>(lines);
+    std::vector<Token> &trg = std::get<1>(lines);
 
     if (first_iter)
       stats.tot_len_ratio +=
           static_cast<double>(trg.size()) / static_cast<double>(src.size());
 
     probs.resize(src.size() + 1);
-    out->out.emplace_back();
 
-    unsigned posNum = 3;
+    if (final_iteration)
+      out->out.emplace_back();
+
+    Token posNum = 3;
     // for every target location
-    for (unsigned j = 0; j < trg.size(); ++j) {
+    for (size_t j = 0; j < trg.size(); ++j) {
       if (!posdata.empty())
       {
         posNum = (*positer)[j];
+      }
+
+      if (first_iter)
+      {
+        // std::cerr << posNum << " " << posdict.Convert(posNum) << std::endl;
+        auto &curtoks = getSafe(stats.toks, posNum);
+        auto const &params = getSafe(model.params, posNum, Params{opts.startkappa, opts.startlambda, 0});
+        auto diag = DiagonalAlignment::Diagonal(j+1, trg.size(), src.size(), params.offset);
+        curtoks.first += diag;
+        curtoks.second += src.size() - diag;
+
+        getSafe(stats.size_index_counts, posNum)[std::tuple<unsigned short, unsigned short, unsigned short>(trg.size(), src.size(), j+1)] += 1;
+      }
+
+      // find probability for every position
+      double sum =
+          processWord<ModelType>(model, stats, opts, probs, src, trg, j, posNum, final_iteration);
+      if (final_iteration) {
+        //print_align(opts, max_align(opts, probs),  j, out);
+      }
+      stats.likelihood += log(sum);
+    }
+    ++lineno;
+    if (!posdata.empty()) {
+      ++positer;
+    }
+  }
+}
+
+template <typename ModelType>
+void count_single_thread(Reader &reader, Model &model, Stats &stats, const Options &opts, size_t iter, OutputNode *out) {
+  std::vector<double> probs;
+
+  bool first_iter = iter == 0;
+  bool final_iteration = iter == (opts.ITERATIONS - 1);
+
+  PairLine lines;
+  Line posdata;
+
+  size_t lineno = 0;
+
+  while (reader.read_1_line(lines, posdata)) {
+    std::vector<Token> &src = std::get<0>(lines);
+    std::vector<Token> &trg = std::get<1>(lines);
+
+    if (first_iter)
+      stats.tot_len_ratio +=
+          static_cast<double>(trg.size()) / static_cast<double>(src.size());
+
+    probs.resize(src.size() + 1);
+
+    if (final_iteration)
+      out->out.emplace_back();
+
+    Token posNum = 3;
+    // for every target location
+    for (size_t j = 0; j < trg.size(); ++j) {
+      if (!posdata.empty())
+      {
+        posNum = posdata[j];
       }
 
       if (first_iter)
@@ -190,17 +279,17 @@ void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const O
       stats.likelihood += log(sum);
     }
     ++lineno;
-    if (!posdata.empty()) {
-      ++positer;
-    }
   }
 }
+
+
+
 
 template <typename ModelType>
 void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter) {
 
-  bool update_tension = opts.favor_diagonal 
-                      && opts.optimize_tension 
+  bool update_tension = opts.favor_diagonal
+                      && opts.optimize_tension
                       && (iter >= opts.n_no_update_diag || iter >= opts.n_no_update_offset);
   if (update_tension) {
 
@@ -230,19 +319,24 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
         // sum DlogZs in each range in parallel
         auto vals = par_map(ranges, [&](std::pair<size_t, size_t> &range) {
           Params accum = {0,0,0};
+
           // loop over buckets
           for (size_t i = range.first; i < range.second; ++i) {
+            //double tmp = 0;
             // loop over key,value pairs in bucket
             for (auto iter = map.cbegin(i), end = map.cend(i); iter != end; ++iter) {
               auto &tup = iter->first;
-              unsigned count = iter->second;
-              
+              size_t count = iter->second;
+
               auto dzs = ModelType::ComputeDLogZs(std::get<2>(tup)
                                           , std::get<0>(tup), std::get<1>(tup), params.kappa, params.lambda, params.offset);
               accum.kappa += dzs.kappa * count;
               accum.lambda += dzs.lambda * count;
               accum.offset += dzs.offset * count;
+              //tmp += dzs.offset * count;
             }
+            //std::cerr << "intermediate: " << tmp << std::endl;
+
           }
           return accum;
         });
@@ -254,7 +348,7 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
       }
 
       print_stats(stats.mod_counts, std::to_string(ii) + " model al-", stats.denom);
-      
+
       if (opts.nosplit)
       {
         normalize_sum_counts(stats.mod_counts, stats.toks);
@@ -270,23 +364,23 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
         auto const &mod = stats.mod_counts[i];
 
         if (iter >= opts.n_no_update_diag) {
-          params.kappa = update<ModelType>(emp.kappa, mod.kappa, params.kappa, 
-                                           learningrate_lk, ModelType::min_lk, ModelType::max_lk);
-          params.lambda = update<ModelType>(emp.lambda, mod.lambda, params.lambda,
-                                            learningrate_lk, ModelType::min_lk, ModelType::max_lk);
+           params.kappa = update<ModelType>(emp.kappa, mod.kappa, params.kappa,
+                                            learningrate_lk, ModelType::min_lk, ModelType::max_lk, 0.05, 80);
+           params.lambda = update<ModelType>(emp.lambda, mod.lambda, params.lambda,
+                                             learningrate_lk, ModelType::min_lk, ModelType::max_lk, 0.05, 80);
         }
         if (iter >= opts.n_no_update_offset)
           params.offset = update<ModelType>(emp.offset, mod.offset, params.offset,
-                                            learningrate_o, ModelType::min_o, ModelType::max_o);
+                                            learningrate_o, ModelType::min_o, ModelType::max_o, 0.03, 0);
       }
       learningrate_lk *= 0.9;
       learningrate_o *= 0.9;
     }
-    
+
     std::cerr << std::endl;
     print_table(model.params, posdict, "  final ");
     std::cerr << std::endl;
-    
+
   }
   if (opts.variational_bayes)
     model.ttable.UpdateFromVB(stats.tcounts, opts.alpha);
@@ -295,7 +389,7 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
 }
 
 template <typename ModelType>
-void countWorker(Reader &reader, ThreadedOutput &outp, Model &model, 
+void countWorker(Reader &reader, ThreadedOutput &outp, Model &model,
                  Stats &stats, std::mutex &statsmut, Options &opts, unsigned iter, unsigned N) {
   PairLines lines;
   PosLines pos;
@@ -305,14 +399,17 @@ void countWorker(Reader &reader, ThreadedOutput &outp, Model &model,
   while (!done) {
     localstats.reset();
     OutputNode *out;
-    done = reader.read_n_lines_threaded(lines, pos, N, outp, out);
-
-    if (lines.size() == 0) {
-      out->done = true;
+    auto status = reader.read_n_lines_threaded(lines, pos, N, outp, out);
+    if (status == ReadStatus::NOTHING_READ) {
       return;
+    } else if (status == ReadStatus::FINISHED) {
+      done = true;
     }
+
     count<ModelType>(lines, pos, model, localstats, opts, iter, out);
+
     out->done = true;
+    
     {
       std::lock_guard<std::mutex> statslock(statsmut);
       stats.add_count(localstats, iter == 0);
@@ -326,25 +423,30 @@ int run(Options &opts) {
 
   Stats stats;
   std::mutex statsmut;
-  
+
   Reader reader(opts.input, opts.pos_filename, stats, opts.is_reverse);
   opts.kNULL = reader.dict.kNULL_;
 
   ThreadedOutput outp(reader.iomut);
-  
-  std::thread outputthread(handleOutput, std::ref(outp), 5);
+  OutputNode *out;
+  outp.que.emplace();
+  out = &outp.que.back();
+
+  //std::thread outputthread(handleOutput, std::ref(outp), 5);
 
   for (unsigned iter = 0; iter < opts.ITERATIONS; ++iter) {
     const bool final_iteration = (iter == (opts.ITERATIONS - 1));
     std::cerr << "ITERATION " << (iter + 1) << (final_iteration ? " (FINAL)" : "")
          << std::endl;
-    
+
+
     stats.reset();
     reader.rewind();
 
-    run_n(opts.n_threads, countWorker<ModelType>, reader, outp, model, 
-          stats, statsmut, opts, iter, opts.batch_size);
-    
+    //run_n(opts.n_threads, countWorker<ModelType>, reader, outp, model,
+    //      stats, statsmut, opts, iter, opts.batch_size);
+    count_single_thread<ModelType>(reader, model, stats, opts, iter, out);
+
     // make update if necessary
     stats.count_toks();
     stats.print(reader.posdict);
@@ -353,15 +455,19 @@ int run(Options &opts) {
       update<ModelType>(model, stats, reader.posdict, opts, iter);
     }
   }
+  out->done = true;
+  outp.finished();
+  handleOutput(outp, 1);
+
   outp.finished();
 
   // after last iteration, write probabilities
   if (!opts.conditional_probability_filename.empty()) {
     std::cerr << "conditional probabilities: " << opts.conditional_probability_filename
          << std::endl;
-    model.ttable.ExportToFile(opts.conditional_probability_filename.c_str(), reader.dict);
+    model.ttable.ExportToFile(opts.conditional_probability_filename, reader.dict);
   }
-  outputthread.join();
+  //outputthread.join();
   return 0;
 }
 
