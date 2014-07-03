@@ -14,9 +14,10 @@
 //
 
 #include "fast_align_ng.h"
-#include <ext/alloc_traits.h>
-#include <system_error>                 // for system_error
-#include <iomanip>                      // for operator<<, setw
+#include "opts.h"                   // for parseArgs, Options
+#include "threaded_output.h"        // for OutputNode
+struct Absolute;
+struct Squared;
 
 using namespace std;
 

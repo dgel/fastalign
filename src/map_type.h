@@ -17,11 +17,21 @@
 #ifndef __MAP_TYPE_H__
 #define __MAP_TYPE_H__
 
+#if !defined(NOGOOGLE)
+
 #include <google/dense_hash_map>
 
 template <typename Key, typename Value, typename Hash = std::hash<Key>>
 using MapType = google::dense_hash_map<Key, Value, Hash>;
 
 #define __NEED_SET_EMPTY_KEY__
+
+#else 
+
+#include <tr1/unordered_map>
+template <typename Key, typename Value, typename Hash = std::hash<Key>>
+using MapType = tr1::unordered_map<Key, Value, Hash>;
+
+#endif
 
 #endif

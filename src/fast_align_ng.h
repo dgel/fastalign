@@ -28,10 +28,11 @@
 #include "da.h"                         // for Diagonal
 #include "model.h"                      // for Stats, Params, Model, etc
 #include "opts.h"                       // for Options
-#include "reader.h"                     // for PosLines, PairLines, Reader
+#include "reader.h"                     // for PosLines, Reader, PairLines
+#include "corpus.h"                     // for Token, Dict (ptr only)
 #include "threaded_output.h"            // for OutputNode, ThreadedOutput
 #include "ttables.h"                    // for TTable
-#include "utils.h"                      // for par_map, n_ranges, etc
+#include "utils.h"                      // for run_n
 class Dict;
 
 size_t max_align(Options const &opts, std::vector<double> &probs);
@@ -89,7 +90,6 @@ double processWord(Model &model, Stats &stats, const Options &opts, std::vector<
     }
     az = opts.prob_align_not_null / az;
     for (size_t i = 1; i <= src.size(); ++i) {
-      probs[i] *= az;
       sum += probs[i];
     }
   // can keep single loop if not
@@ -119,7 +119,7 @@ double processWord(Model &model, Stats &stats, const Options &opts, std::vector<
       // optimization that happens to work for both modeltypes.
       double x = ModelType::Feature(j+1, i, trg.size(), src.size(), params.offset);
       tmp = ModelType::dTransform(x) * p;
-      emp_counts.lambda += x * tmp ;
+      emp_counts.kappa += x * tmp ;
       tmpoffset += tmp;
     }
     emp_counts.offset += tmpoffset * params.kappa;
@@ -203,78 +203,6 @@ void count(PairLines &in, PosLines &posdata, Model &model, Stats &stats, const O
 }
 
 template <typename ModelType>
-void count_single_thread(Reader &reader, ThreadedOutput &outp, Model &model, Stats &stats, const Options &opts, size_t iter) {
-  std::vector<double> probs;
-
-  bool first_iter = iter == 0;
-  bool final_iteration = iter == (opts.ITERATIONS - 1);
-
-  PairLine lines;
-  Line posdata;
-
-  OutputNode *out = nullptr;
-
-  size_t lineno = 0;
-
-  while (reader.read_1_line(lines, posdata)) {
-    if (final_iteration && lineno % opts.batch_size == 0) {
-      if (out) {
-        out->done = true;
-      }
-      out = outp.getOutput();
-    }
-
-    std::vector<Token> &src = std::get<0>(lines);
-    std::vector<Token> &trg = std::get<1>(lines);
-
-    if (first_iter)
-      stats.tot_len_ratio +=
-          static_cast<double>(trg.size()) / static_cast<double>(src.size());
-
-    probs.resize(src.size() + 1);
-
-    if (final_iteration)
-      out->out.emplace_back();
-
-    Token posNum = 3;
-    // for every target location
-    for (size_t j = 0; j < trg.size(); ++j) {
-      if (!posdata.empty())
-      {
-        posNum = posdata[j];
-      }
-
-      if (first_iter)
-      {
-        // std::cerr << posNum << " " << posdict.Convert(posNum) << std::endl;
-        auto &curtoks = getSafe(stats.toks, posNum);
-        auto const &params = getSafe(model.params, posNum, Params{opts.startkappa, opts.startlambda, 0});
-        auto diag = DiagonalAlignment::Diagonal(j+1, trg.size(), src.size(), params.offset);
-        curtoks.first += diag;
-        curtoks.second += src.size() - diag;
-
-        stats.get_size_index_count(posNum)[std::tuple<unsigned short, unsigned short, unsigned short>(trg.size(), src.size(), j+1)] += 1;
-      }
-
-      // find probability for every position
-      double sum =
-          processWord<ModelType>(model, stats, opts, probs, src, trg, j, posNum, final_iteration);
-      if (final_iteration) {
-        print_align(opts, max_align(opts, probs),  j, out);
-      }
-      stats.likelihood += log(sum);
-    }
-    ++lineno;
-  }
-  if (out) {
-    out->done = true;
-  }
-}
-
-
-
-
-template <typename ModelType>
 void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter) {
 
   bool update_tension = opts.favor_diagonal
@@ -324,7 +252,6 @@ void update(Model &model, Stats &stats, Dict &posdict, Options opts, size_t iter
               accum.offset += dzs.offset * count;
               //tmp += dzs.offset * count;
             }
-            //std::cerr << "intermediate: " << tmp << std::endl;
 
           }
           return accum;
@@ -428,12 +355,8 @@ int run(Options &opts) {
     stats.reset();
     reader.rewind();
 
-    if (opts.n_threads > 0) {
-      run_n(opts.n_threads, countWorker<ModelType>, reader, outp, model,
-            stats, statsmut, opts, iter, opts.batch_size);
-    } else {
-      count_single_thread<ModelType>(reader, outp, model, stats, opts, iter);
-    }
+    run_n(opts.n_threads, countWorker<ModelType>, reader, outp, model,
+          stats, statsmut, opts, iter, opts.batch_size);
 
     // make update if necessary
     stats.count_toks();

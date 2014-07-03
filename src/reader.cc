@@ -50,7 +50,7 @@ bool Reader::read_n_lines(PairLines &lines, PosLines &poslines, size_t N) {
     read_line(lines.back());
     if (posdata != nullptr) {
       poslines.emplace_back();
-      read_pos_line(poslines.back(), is_reverse ? lines.back().second.size() : lines.back().first.size());
+      read_pos_line(poslines.back(), is_reverse ? lines.back().first.size() : lines.back().second.size());
     }
     if (++nread == N) break;
   }
@@ -64,27 +64,6 @@ bool Reader::read_n_lines(PairLines &lines, PosLines &poslines, size_t N) {
   }
   return false;
 }
-
-bool Reader::read_1_line(PairLine &lines, Line &pos) {
-  if (std::getline(data, readbuf)) {
-    // give user some idea of progress
-    print_newline = print_progress(++stats.lc);
-
-    read_line(lines);
-
-    if (posdata != nullptr) {
-      read_pos_line(pos, is_reverse ? lines.second.size() : lines.first.size());
-    }
-    return true; 
-  }
-  // signal if done processing corpus
-  if (print_newline) {
-    std::cerr << std::endl;
-    print_newline = false;
-  }
-  return false;
-}
-
 
 void Reader::read_line(PairLine &pair) {
   if (is_reverse) {
@@ -117,16 +96,6 @@ void Reader::read_pos_line(Line &posline, size_t n_tokens) {
   }
 }
 
-void Reader::rewind() {
-  data.clear();
-  data.seekg(0);
-  if (posdata) {
-    posdata->clear();
-    posdata->seekg(0);
-  }
-  print_newline = true;
-}
-
 ReadStatus Reader::read_n_lines_threaded(PairLines &lines, PosLines &pos, size_t N, ThreadedOutput &outp, OutputNode *&out) {
   std::lock_guard<std::mutex> io_lock(iomut);
   bool done = read_n_lines(lines, pos, N);
@@ -137,3 +106,14 @@ ReadStatus Reader::read_n_lines_threaded(PairLines &lines, PosLines &pos, size_t
   out = &outp.que.back();
   return done? ReadStatus::FINISHED : ReadStatus::CONTINUE;
 }
+
+void Reader::rewind() {
+  data.clear();
+  data.seekg(0);
+  if (posdata) {
+    posdata->clear();
+    posdata->seekg(0);
+  }
+  print_newline = true;
+}
+

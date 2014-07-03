@@ -37,7 +37,6 @@ struct ThreadedOutput {
 
   ThreadedOutput(std::mutex &mut);
   void finished();
-  OutputNode *getOutput();
 };
 
 

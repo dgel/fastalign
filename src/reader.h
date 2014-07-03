@@ -51,7 +51,6 @@ public:
   Reader(std::string &datafile, std::string &posfile, Stats &stats, bool is_reverse);
 
   ReadStatus read_n_lines_threaded(PairLines &lines, PosLines &pos, size_t N, ThreadedOutput &outp, OutputNode *&out);
-  bool read_1_line(PairLine &lines, Line &pos);
   
   void rewind();
 };

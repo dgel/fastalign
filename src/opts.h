@@ -21,6 +21,7 @@
 #include <iostream>                     // for operator<<, cerr, ostream
 #include <string>                       // for string
 
+
 struct Options {
   std::string input;           // corpus filename
   unsigned ITERATIONS;         // number of iterations
@@ -55,11 +56,36 @@ struct Options {
   unsigned kNULL;
 };
 
+template <typename T>
+class BetweenConstraint: public TCLAP::Constraint<T> {
+  T lbound_;
+  T ubound_;
+
+public:
+  BetweenConstraint(T lbound, T ubound)
+   : lbound_(lbound), ubound_(ubound)
+  {}
+
+  bool check(T const &value) const {
+    return (value >= lbound_ && value <= ubound_);
+  }
+
+  std::string description() const {
+    return "value should be between " + std::to_string(lbound_) + " and " + std::to_string(ubound_);
+  }
+
+  std::string shortID() const {
+    return std::to_string(lbound_) + "-" + std::to_string(ubound_);
+  }
+
+}; 
+
 
 template <typename ModelType>
 void parseArgs(int argc, char **argv, Options &opts) {
   using namespace TCLAP;
   using namespace std;
+
   try {
     CmdLine cmd("fast_align_ng", ' ', "0.3");
 
@@ -68,15 +94,19 @@ void parseArgs(int argc, char **argv, Options &opts) {
                             "string", cmd);
     ValueArg<string> oPos("P", "POS", "Input POS data, for predicted side (trg by default)", false, "",
                             "string", cmd);
-    ValueArg<size_t> oIter("I", "iterations",
+
+    BetweenConstraint<int> larger_zero(1, std::numeric_limits<int>::max());
+    BetweenConstraint<int> larger_eq_zero(0, std::numeric_limits<int>::max());
+
+    ValueArg<int> oIter("I", "iterations",
                            "number of iterations in EM training (default = 5)",
-                           false, 5, "unsigned", cmd);
-    ValueArg<size_t> oThreads("", "parallel",
+                           false, 5, &larger_zero, cmd);
+    ValueArg<int> oThreads("", "parallel",
                            "number of threads to use (default = 1)",
-                           false, 1, "unsigned", cmd);
-    ValueArg<size_t> oBatchSize("", "batch_size",
+                           false, 1, &larger_zero, cmd);
+    ValueArg<int> oBatchSize("", "batch_size",
                            "number of lines for a thread to process at a time",
-                           false, 20000, "unsigned", cmd);
+                           false, 20000, &larger_zero, cmd);
     ValueArg<double> oP0("p", "p0", "p_null parameter (default = 0.08)", false,
                          0.08, "double", cmd);
     ValueArg<double> oKappa(
@@ -94,12 +124,12 @@ void parseArgs(int argc, char **argv, Options &opts) {
     ValueArg<string> oCond("c", "conditional_probabilities",
                            "Output conditional probability table", false, "",
                            "string", cmd);
-    ValueArg<size_t> oNUpDiag("", "n_no_update_diag",
+    ValueArg<int> oNUpDiag("", "n_no_update_diag",
                            "number of iterations during which diagonal is not updated",
-                           false, 1, "unsigned", cmd);
-    ValueArg<size_t> oNUpOffset("", "n_no_update_offset",
+                           false, 1, &larger_eq_zero, cmd);
+    ValueArg<int> oNUpOffset("", "n_no_update_offset",
                            "number of iterations during which offset is not updated",
-                           false, 1, "unsigned", cmd);
+                           false, 1, &larger_eq_zero, cmd);
     // switches
     SwitchArg sRev(
         "r", "reverse",
@@ -154,6 +184,10 @@ void parseArgs(int argc, char **argv, Options &opts) {
     if (opts.variational_bayes && opts.alpha <= 0.0) {
       cerr << "--alpha must be > 0\n";
       exit(1);
+    }
+    if (opts.n_threads < 1) {
+      std::cerr << "Warning: invalid number of threads specified, defaulting to 1 thread." << std::endl;
+      opts.n_threads = 1;
     }
 
   }

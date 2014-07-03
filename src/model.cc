@@ -50,18 +50,13 @@ void Stats::print(Dict &posdict) {
 }
 
 void normalize_counts(vector<Params> &vec, vector<pair<unsigned,unsigned>> &toks) {
-  cerr << "normalize_counts called" << endl;
   for (unsigned i = 3; i < vec.size(); ++i) {
     auto &param = vec[i];
     auto &toknum = toks[i];
-    //cerr << "kappa: original: " << param.kappa << ", toknum: " << (toknum.first + toknum.second) << ", result: ";
     param.kappa /= toknum.first;
-    //cerr << param.kappa << endl;
 
     param.lambda /= toknum.second;
-    //cerr << "offset: original: " << param.offset << ", toknum: " << (toknum.first + toknum.second) << ", result: ";
     param.offset /= toknum.first + toknum.second;
-    //cerr << param.offset << endl;
   }
 }
 

@@ -68,7 +68,7 @@ struct Squared {
     return exp(Transform(Feature(i, j, m, n, offset)) * kappa * -1);
   }
 
-  static std::tuple<double, double> ComputeZs(const unsigned i, const unsigned m, const unsigned n,
+  static std::pair<double, double> ComputeZs(const unsigned i, const unsigned m, const unsigned n,
                          const double kappa, const double lambda, const double offset) {
     const unsigned floor = DiagonalAlignment::Diagonal(i,m,n,offset);
     const unsigned ceil = floor + 1;
@@ -81,13 +81,13 @@ struct Squared {
     for (size_t j = ceil; j <= n; ++j) {
       ezt += UnnormalizedProb(i,j,m,n,lambda, offset);
     }
-    return std::make_tuple(ezb,ezt);
+    return std::make_pair(ezb,ezt);
   }
 
   static double ComputeZ(const unsigned i, const unsigned m, const unsigned n,
                          const double kappa, const double lambda, const double offset) {
     auto zs = ComputeZs(i, m, n, kappa, lambda, offset);
-    return std::get<0>(zs) + std::get<1>(zs);
+    return zs.first + zs.second;
   }
 
   static Params ComputeDLogZs(const unsigned i, const unsigned m,
@@ -157,7 +157,7 @@ struct Absolute {
     return exp(Transform(Feature(i, j, m, n, offset)) * kappa * -1);
   }
 
-  static std::tuple<double, double> ComputeZs(const unsigned i, const unsigned m, const unsigned n,
+  static std::pair<double, double> ComputeZs(const unsigned i, const unsigned m, const unsigned n,
                          const double kappa, const double lambda, const double offset) {
     const unsigned floor = DiagonalAlignment::Diagonal(i,m,n,offset);
     const unsigned ceil = floor + 1;
@@ -170,13 +170,13 @@ struct Absolute {
     for (size_t j = ceil; j <= n; ++j) {
       ezt += UnnormalizedProb(i,j,m,n,lambda, offset);
     }
-    return std::make_tuple(ezb,ezt);
+    return std::make_pair(ezb,ezt);
   }
 
   static double ComputeZ(const unsigned i, const unsigned m, const unsigned n,
                          const double kappa, const double lambda, const double offset) {
     auto zs = ComputeZs(i, m, n, kappa, lambda, offset);
-    return std::get<0>(zs) + std::get<1>(zs);
+    return zs.first + zs.second;
   }
 
   static Params ComputeDLogZs(const unsigned i, const unsigned m,

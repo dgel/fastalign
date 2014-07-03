@@ -12,30 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-
-
 #ifndef _CPYPDICT_H_
 #define _CPYPDICT_H_
 
 #include <string>
 #include <locale>
 #include <iostream>
-#include <fstream>
 #include <vector>
-#include <set>
-#include <functional>
-#include <cassert>
-
+#include <cstdint>
 #include "map_type.h"
 
 typedef std::uint32_t Token;
     
 class Dict {
-  typedef MapType<std::string, Token,
-                                  std::hash<std::string> > Map;
+  typedef MapType<std::string, Token> Map;
 
  public:
-  Dict() : b0_("<bad0>"), eps_("<eps>") {
+  Dict() : b0_("<bad0>"), eps_("<eps>"), div_("|||") {
     #ifdef __NEED_SET_EMPTY_KEY__
       d_.set_empty_key("<<e>>");
       d_.set_deleted_key("<<d>>");
@@ -52,15 +45,16 @@ class Dict {
   size_t Skip(const std::string &line, size_t cur) {
     size_t last = 0;
     bool inToken = false;
-    Token tmp;
+    std::string tmp;
 
     while (cur < line.size()) {
       if (isspace(line[cur++])) {
         if (!inToken) continue;
-        tmp = Convert(line.substr(last, cur - last - 1));
-        if (tmp == kDIV_) {
+        tmp = line.substr(last, cur - last - 1);
+        if (tmp == div_) {
           return cur;
         } 
+        inToken = false;
       } else {
         if (inToken) continue;
         last = cur - 1;
@@ -133,6 +127,7 @@ class Dict {
  private:
   std::string b0_;
   std::string eps_;
+  std::string div_;
   std::vector<std::string> words_;
   Map d_;
 };

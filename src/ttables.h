@@ -16,11 +16,14 @@
 #ifndef _TTABLES_H_
 #define _TTABLES_H_
 
-#include <cmath>
-
-#include <vector>
-#include "corpus.h"
-#include "map_type.h"
+#include <fstream>                      // for ofstream
+#include <cmath>                        // for log, exp
+#include <iosfwd>                       // for basic_ofstream, ofstream
+#include <string>                       // for string
+#include <utility>                      // for pair
+#include <vector>                       // for vector
+#include "corpus.h"                     // for Token, Dict
+#include "map_type.h"                   // for __NEED_SET_EMPTY_KEY__
 
 namespace Md {
 inline double digamma(double x) {

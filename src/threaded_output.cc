@@ -14,12 +14,6 @@ void ThreadedOutput::finished()
   done = true;
 }
 
-OutputNode *ThreadedOutput::getOutput() {
-  std::lock_guard<std::mutex> lock(iomut);
-  que.emplace();
-  return &que.back();
-}
-
 void handleOutput(ThreadedOutput &out, size_t sleeptime) {
   while (true) {
     if (out.iomut.try_lock()) {
