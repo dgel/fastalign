@@ -28,9 +28,9 @@ using MapType = google::dense_hash_map<Key, Value, Hash>;
 
 #else 
 
-#include <tr1/unordered_map>
+#include <unordered_map>
 template <typename Key, typename Value, typename Hash = std::hash<Key>>
-using MapType = tr1::unordered_map<Key, Value, Hash>;
+using MapType = std::unordered_map<Key, Value, Hash>;
 
 #endif
 

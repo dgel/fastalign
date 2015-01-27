@@ -1,7 +1,7 @@
 CXXFLAGS = -std=c++11 -O3 -funroll-loops -Werror -Wall 
 
 GOOGLE ?= 1
-ifeq (GOOGLE, 0)
+ifeq (${GOOGLE}, 0)
     CXXFLAGS += -DNOGOOGLE
 endif
 

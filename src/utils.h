@@ -18,6 +18,7 @@
 
 #include <thread>
 
+
 // map a function over a vector, spawning a thread for each function call
 template <typename T, typename Func>
 auto par_map(std::vector<T> &in, Func f) -> std::vector<decltype(f(in[0]))> {
@@ -58,8 +59,6 @@ std::vector<std::pair<size_t, size_t>> n_ranges(size_t size, size_t N) {
     low += incr + (i < rem ? 1 : 0);
   }
 
-  // remove when certain this function is correct
-  assert(size == result.back().second);
   return result;
 }
 
